@@ -1,21 +1,18 @@
 import argparse
 import time
 
+from tensorflow.keras.preprocessing import image
 import numpy as np
 import cv2
-from tensorflow.keras.preprocessing import image
 
 
 if __name__ == "__main__":
-    # file_name = 'data/volcano.mp4'
     file_name = 'data/ladybug.mp4'
-    # file_name = 'data/handwomanpot.mp4'
-    # file_name = 'data/monarch_butterfly.mp4'
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", help="video to be processed")
-    parser.add_argument("--model", help="model to use, options: 'MobileNet',"
-                                        "'VGG16','InceptionV3', 'ResNet50'")
+    parser.add_argument("--model", help="model to be uses, options: 'MobileNet'"
+                                        ", 'VGG16', 'InceptionV3', 'ResNet50'")
 
     args = parser.parse_args()
 
