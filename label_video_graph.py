@@ -64,7 +64,6 @@ if __name__ == "__main__":
     input_height = 299
     input_width = 299
 
-
     tf.compat.v1.disable_eager_execution()
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", help="video to be processed")
@@ -97,7 +96,6 @@ if __name__ == "__main__":
     if args.output_layer:
         output_layer = args.output_layer
 
-
     graph = load_graph(model_file)
 
     cap = cv2.VideoCapture(file_name)
@@ -110,60 +108,60 @@ if __name__ == "__main__":
     input_operation = graph.get_operation_by_name(input_name)
     output_operation = graph.get_operation_by_name(output_name)
 
-    while cap.isOpened():
-        start = time.time()
-        ret, img = cap.read()
+    with tf.compat.v1.Session(graph=graph) as sess:
+        while cap.isOpened():
+            start = time.time()
+            ret, img = cap.read()
 
-        # If there are no frames left, exit while loop
-        if not(ret):
-            break
-        
-        # When the frame is read the order of colors is BGR (blue, green, red)
-        # Next line converts it to RGB
-        imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            # If there are no frames left, exit while loop
+            if not(ret):
+                break
 
-        t = read_tensor_from_frame(
-            imgRGB,
-            input_height=input_height,
-            input_width=input_width,
-            input_mean=input_mean,
-            input_std=input_std)
+            # When the frame is read the order of colors is BGR (blue, green, red)
+            # Next line converts it to RGB
+            imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        with tf.compat.v1.Session(graph=graph) as sess:
+            t = read_tensor_from_frame(
+                imgRGB,
+                input_height=input_height,
+                input_width=input_width,
+                input_mean=input_mean,
+                input_std=input_std)
+
             results = sess.run(output_operation.outputs[0], {
                 input_operation.outputs[0]: t
             })
 
-        labels = load_labels(label_file)
-        results = np.squeeze(results)
-        index = np.argmax(results)
 
-        class_name = labels[index]
-        confidence_score = results[index]
-        confidence_level = confidence_score * 100
+            labels = load_labels(label_file)
+            results = np.squeeze(results)
+            index = np.argmax(results)
 
-        end = time.time()
-        totalTime = end - start
+            class_name = labels[index]
+            confidence_score = results[index]
+            confidence_level = confidence_score * 100
 
-        fps = 1 / totalTime
+            end = time.time()
+            totalTime = end - start
+            fps = 1 / totalTime
 
-        print("Class: ", class_name)
-        print("Confidence score: ", confidence_score)
-        print("FPS: {:.2f}".format(fps))
+            print("Class: ", class_name)
+            print("Confidence score: ", confidence_score)
+            print("FPS: {:.2f}".format(fps))
 
-        if confidence_level > 80:
-            text_color = (0, 255, 0)
-        else:
-            text_color = (0, 0, 255)
+            if confidence_level > 80:
+                text_color = (0, 255, 0)
+            else:
+                text_color = (0, 0, 255)
 
-        cv2.putText(img, str(float("{:.2f}".format(confidence_level))) + "% " +
-                    class_name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                    text_color, 2)
+            cv2.putText(img, str(float("{:.2f}".format(confidence_level))) + "% " +
+                        class_name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                        text_color, 2)
 
-        cv2.imshow('Video Classification', img)
+            cv2.imshow('Video Classification', img)
 
-        if cv2.waitKey(5) & 0xFF == ord('q'):
-            break
+            if cv2.waitKey(5) & 0xFF == ord('q'):
+                break
 
     cv2.destroyAllWindows()
     cap.release()
