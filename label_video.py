@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", help="video to be processed")
-    parser.add_argument("--model", help="model to be uses, options: 'MobileNet'"
+    parser.add_argument("--model", help="model to be used, options: 'MobileNet'"
                                         ", 'VGG16', 'InceptionV3', 'ResNet50'")
 
     args = parser.parse_args()
