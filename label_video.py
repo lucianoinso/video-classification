@@ -1,115 +1,168 @@
+# Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 import argparse
+import numpy as np
+import tensorflow.compat.v1 as tf
+import cv2
 import time
 
-from tensorflow.keras.preprocessing import image
-import numpy as np
-import cv2
+
+def load_graph(model_file):
+    graph = tf.Graph()
+    graph_def = tf.GraphDef()
+
+    with open(model_file, "rb") as f:
+        graph_def.ParseFromString(f.read())
+    with graph.as_default():
+        tf.import_graph_def(graph_def)
+
+    return graph
+
+
+def read_tensor_from_frame(sess,
+                           frame,
+                           input_height=299,
+                           input_width=299,
+                           input_mean=0,
+                           input_std=255):
+    float_caster = tf.cast(frame, tf.float32)
+    dims_expander = tf.expand_dims(float_caster, 0)
+    resized = tf.image.resize_bilinear(dims_expander,
+                                       [input_height, input_width])
+    normalized = tf.divide(tf.subtract(resized, [input_mean]), [input_std])
+    return sess.run(normalized)
+
+
+def load_labels(label_file):
+    proto_as_ascii_lines = tf.gfile.GFile(label_file).readlines()
+    return [l.rstrip() for l in proto_as_ascii_lines]
 
 
 if __name__ == "__main__":
     file_name = 'data/ladybug.mp4'
+    model_file = 'data/inception_v3_2016_08_28_frozen.pb'
+    label_file = "data/imagenet_slim_labels.txt"
+
+    # InceptionV3 Input height and width
+    input_height = 299
+    input_width = 299
+
+    input_mean = 0
+    input_std = 255
+    input_layer = "input"
+    output_layer = "InceptionV3/Predictions/Reshape_1"
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", help="video to be processed")
-    parser.add_argument("--model", help="model to be used, options: 'MobileNet'"
-                                        ", 'VGG16', 'InceptionV3', 'ResNet50'")
-
+    parser.add_argument("--graph", help="graph/model to be executed")
+    parser.add_argument("--labels", help="name of file containing labels")
+    parser.add_argument("--input_height", type=int, help="input height")
+    parser.add_argument("--input_width", type=int, help="input width")
+    parser.add_argument("--input_mean", type=int, help="input mean")
+    parser.add_argument("--input_std", type=int, help="input std")
+    parser.add_argument("--input_layer", help="name of input layer")
+    parser.add_argument("--output_layer", help="name of output layer")
     args = parser.parse_args()
 
+    if args.graph:
+        model_file = args.graph
     if args.video:
         file_name = args.video
+    if args.labels:
+        label_file = args.labels
+    if args.input_height:
+        input_height = args.input_height
+    if args.input_width:
+        input_width = args.input_width
+    if args.input_mean:
+        input_mean = args.input_mean
+    if args.input_std:
+        input_std = args.input_std
+    if args.input_layer:
+        input_layer = args.input_layer
+    if args.output_layer:
+        output_layer = args.output_layer
 
-    if args.model:
-        model_name = args.model
-    else:
-        # If model_name not specified, use fastest model
-        model_name = 'MobileNet'
-
-    size = (224, 224)  # Model input size for MobileNet, VGG16 and ResNet50
-
-    if model_name == 'MobileNet':
-        from tensorflow.keras.applications.mobilenet import MobileNet
-        from tensorflow.keras.applications.mobilenet import (preprocess_input,
-                                                             decode_predictions)
-        model = MobileNet(weights='imagenet')
-
-    elif model_name == 'VGG16':
-        from tensorflow.keras.applications.vgg16 import VGG16
-        from tensorflow.keras.applications.vgg16 import (preprocess_input,
-                                                         decode_predictions)
-        model = VGG16(weights='imagenet')
-
-    elif model_name == 'ResNet50':
-        from tensorflow.keras.applications.resnet50 import ResNet50
-        from tensorflow.keras.applications.resnet50 import (preprocess_input,
-                                                            decode_predictions)
-        model = ResNet50(weights='imagenet')
-
-    elif model_name == 'InceptionV3':
-        from tensorflow.keras.applications.inception_v3 import InceptionV3
-        from tensorflow.keras.applications.inception_v3 import (preprocess_input,
-                                                                decode_predictions)
-        size = (299, 299)  # Model input size for InceptionV3
-        model = InceptionV3(weights='imagenet')
-
-    else:
-        print('Model not found')
-        exit()
+    graph = load_graph(model_file)
 
     cap = cv2.VideoCapture(file_name)
+
     if not(cap.isOpened()):
         print("File not found: {}".format(file_name))
 
-    while cap.isOpened():
-        start = time.time()
-        ret, img = cap.read()
+    input_name = "import/" + input_layer
+    output_name = "import/" + output_layer
+    input_operation = graph.get_operation_by_name(input_name)
+    output_operation = graph.get_operation_by_name(output_name)
+    labels = load_labels(label_file)
 
-        # If there are no frames left, exit loop
-        if not(ret):
-            break
+    with tf.compat.v1.Session(graph=graph) as sess:
+        sess.run(tf.global_variables_initializer())
+        while cap.isOpened():
+            ret, img = cap.read()
 
-        # When the frame is read the order of colors is BGR (blue, green, red)
-        # Next line converts it to RGB
-        imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        height, width, channels = img.shape
-        scale_value = width / height
-        img_resized = cv2.resize(imgRGB, size, fx=scale_value, fy=1,
-                                 interpolation=cv2.INTER_NEAREST)
+            # If there are no frames left, exit while loop
+            if not(ret):
+                break
 
-        x = image.img_to_array(img_resized)
-        x = np.expand_dims(x, axis=0)
-        x = preprocess_input(x)
+            # After the frame is read the color order is BGR (blue, green, red)
+            # Next line converts it to RGB
+            imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        preds = model.predict(x)
+            start = time.time()
+            t = read_tensor_from_frame(
+                sess,
+                imgRGB,
+                input_height=input_height,
+                input_width=input_width,
+                input_mean=input_mean,
+                input_std=input_std)
 
-        top_prediction = decode_predictions(preds, top=1)[0][0]
+            results = sess.run(output_operation.outputs[0], {
+                input_operation.outputs[0]: t
+            })
 
-        class_name = top_prediction[1]
-        confidence_score = top_prediction[2]
-        confidence_level = confidence_score * 100
+            results = np.squeeze(results)
+            index = np.argmax(results)
 
-        end = time.time()
-        totalTime = end - start
-        fps = 1 / totalTime
+            class_name = labels[index]
+            confidence_score = results[index]
+            confidence_level = confidence_score * 100
 
-        print("Model: ", model_name)
-        print("Class: ", class_name)
-        print("Confidence score: ", confidence_score)
-        print("FPS: {:.2f}".format(fps))
+            if confidence_level > 80:
+                text_color = (0, 255, 0)
+            else:
+                text_color = (0, 0, 255)
 
-        if confidence_level > 80:
-            text_color = (0, 255, 0)
-        else:
-            text_color = (0, 0, 255)
+            cv2.putText(img, str(float("{:.2f}".format(confidence_level))) +
+                        "% " + class_name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                        1, text_color, 2)
 
-        cv2.putText(img, str(float("{:.2f}".format(confidence_level))) + "% " +
-                    class_name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                    text_color, 2)
+            cv2.imshow('Video Classification', img)
 
-        cv2.imshow('Video Classification', img)
+            end = time.time()
+            totalTime = end - start
+            fps = 1 / totalTime
 
-        if cv2.waitKey(5) & 0xFF == ord('q'):
-            break
+            print("Class: ", class_name)
+            print("Confidence score: ", confidence_score)
+            print("FPS: {:.2f}".format(fps))
+
+            if cv2.waitKey(5) & 0xFF == ord('q'):
+                break
 
     cv2.destroyAllWindows()
     cap.release()
