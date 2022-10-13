@@ -34,7 +34,8 @@ def load_graph(model_file):
     return graph
 
 
-def read_tensor_from_frame(frame,
+def read_tensor_from_frame(sess,
+                           frame,
                            input_height=299,
                            input_width=299,
                            input_mean=0,
@@ -43,7 +44,6 @@ def read_tensor_from_frame(frame,
     dims_expander = tf.expand_dims(float_caster, 0)
     resized = tf.image.resize_bilinear(dims_expander, [input_height, input_width])
     normalized = tf.divide(tf.subtract(resized, [input_mean]), [input_std])
-    sess = tf.compat.v1.Session()
     return sess.run(normalized)
 
 
@@ -53,7 +53,7 @@ def load_labels(label_file):
 
 
 if __name__ == "__main__":
-    file_name = 'data/volcano.mp4'
+    file_name = 'data/ladybug.mp4'
     model_file = 'data/inception_v3_2016_08_28_frozen.pb'
     label_file = "data/imagenet_slim_labels.txt"
     input_layer = "input"
@@ -107,10 +107,11 @@ if __name__ == "__main__":
     output_name = "import/" + output_layer
     input_operation = graph.get_operation_by_name(input_name)
     output_operation = graph.get_operation_by_name(output_name)
+    labels = load_labels(label_file)
+
 
     with tf.compat.v1.Session(graph=graph) as sess:
         while cap.isOpened():
-            start = time.time()
             ret, img = cap.read()
 
             # If there are no frames left, exit while loop
@@ -120,20 +121,21 @@ if __name__ == "__main__":
             # When the frame is read the order of colors is BGR (blue, green, red)
             # Next line converts it to RGB
             imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
+ 
             t = read_tensor_from_frame(
+                sess,
                 imgRGB,
                 input_height=input_height,
                 input_width=input_width,
                 input_mean=input_mean,
                 input_std=input_std)
-
+             
+            start = time.time()
             results = sess.run(output_operation.outputs[0], {
                 input_operation.outputs[0]: t
             })
+            end = time.time()
 
-
-            labels = load_labels(label_file)
             results = np.squeeze(results)
             index = np.argmax(results)
 
@@ -141,7 +143,6 @@ if __name__ == "__main__":
             confidence_score = results[index]
             confidence_level = confidence_score * 100
 
-            end = time.time()
             totalTime = end - start
             fps = 1 / totalTime
 
